@@ -8,6 +8,10 @@
  * Sobald die erste echte Antwort vorliegt, gehört sie als weiterer Fall in diese
  * Datei — dann ist sofort sichtbar, ob die Erkennung sie trifft.
  */
+if ( PHP_SAPI !== 'cli' ) {
+	exit( 'Dieses Skript läuft nur auf der Kommandozeile.' );
+}
+
 define( 'ABSPATH', '/tmp/' );
 define( 'TOS_VERSION', '1.0.0' );
 class WP_Error {
