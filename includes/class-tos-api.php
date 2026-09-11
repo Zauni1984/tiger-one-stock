@@ -33,21 +33,16 @@ class TOS_API {
 	 * @return array{payload:mixed,raw:string,transport:string,http:int}|WP_Error
 	 */
 	public static function brand_stock( $brand_code ) {
-		$warehouse = TOS_Settings::credential( 'warehouse_code' );
-		if ( $warehouse === '' ) {
-			return new WP_Error( 'tos_cfg', 'Es ist kein Warehouse Code hinterlegt. Den gibt Tiger One beim Onboarding heraus.' );
-		}
 		if ( (string) $brand_code === '' ) {
 			return new WP_Error( 'tos_cfg', 'Es ist kein Brand Code hinterlegt. Tiger One vergibt je Marke einen Code.' );
 		}
 
-		$url  = self::endpoint( '/get_brand_stock' );
-		$body = wp_json_encode(
-			array(
-				'warehouse_code' => $warehouse,
-				'brand_code'     => is_numeric( $brand_code ) ? (int) $brand_code : (string) $brand_code,
-			)
-		);
+		// Der Warehouse Code ist im Onboarding als zwingend beschrieben, liegt aber
+		// nicht immer vor. Fehlt er, wird das Feld weggelassen statt mit einem
+		// erfundenen Wert gefüllt: Dann antwortet Tiger One selbst, ob es ohne geht.
+		$warehouse = TOS_Settings::credential( 'warehouse_code' );
+		$url       = self::endpoint( '/get_brand_stock' );
+		$body      = wp_json_encode( self::request_body( $warehouse, $brand_code ) );
 
 		$res = self::get_with_body( $url, $body );
 		if ( is_wp_error( $res ) ) {
@@ -64,14 +59,7 @@ class TOS_API {
 		if ( self::complains_about_params( $payload ) ) {
 			$res2 = self::get_with_body(
 				$url,
-				wp_json_encode(
-					array(
-						'params' => array(
-							'warehouse_code' => $warehouse,
-							'brand_code'     => is_numeric( $brand_code ) ? (int) $brand_code : (string) $brand_code,
-						),
-					)
-				)
+				wp_json_encode( array( 'params' => self::request_body( $warehouse, $brand_code ) ) )
 			);
 			if ( ! is_wp_error( $res2 ) ) {
 				$payload2 = self::unwrap( $res2['body'] );
@@ -88,6 +76,15 @@ class TOS_API {
 			'transport' => $res['transport'],
 			'http'      => $res['http'],
 		);
+	}
+
+	/** Anfragekörper; ohne Warehouse Code bleibt das Feld weg. */
+	private static function request_body( $warehouse, $brand_code ) {
+		$body = array( 'brand_code' => is_numeric( $brand_code ) ? (int) $brand_code : (string) $brand_code );
+		if ( (string) $warehouse !== '' ) {
+			$body = array( 'warehouse_code' => (string) $warehouse ) + $body;
+		}
+		return $body;
 	}
 
 	/** Fachlicher Fehler in der Antwort, z. B. „Brand not found." */

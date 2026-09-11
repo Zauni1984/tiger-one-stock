@@ -131,6 +131,11 @@ $cs_const = TOS_Settings::credential_is_constant( 'consumer_secret' );
 				<td>
 					<input type="text" id="warehouse_code" name="warehouse_code" value="<?php echo esc_attr( $wh_const ? '' : $s['warehouse_code'] ); ?>" class="regular-text" <?php disabled( $wh_const ); ?>>
 					<?php if ( $wh_const ) : ?><p class="description">Kommt aus der <code>wp-config.php</code>.</p><?php endif; ?>
+					<p class="description">
+						Darf leer bleiben: Dann wird das Feld gar nicht mitgesendet und Tiger One
+						antwortet selbst, ob der Feed ohne Lagerangabe auskommt. Im Onboarding ist
+						der Code als zwingend beschrieben — erfunden wird hier aber keiner.
+					</p>
 				</td>
 			</tr>
 			<tr>

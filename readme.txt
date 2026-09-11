@@ -12,8 +12,15 @@ die Artikelnummer (SKU) — auch auf Variantenebene.
 
 Zwingend für den Bestandsabgleich:
 
-* **Warehouse Code** — das Lager, aus dem der Bestand gemeldet wird.
 * **Brand Code** je Marke — der Feed liefert immer genau eine Marke pro Abruf.
+  Ohne Brand Code antwortet der Server nur „Brand not found."
+
+Im Onboarding zusätzlich als zwingend genannt, in der Praxis erst zu prüfen:
+
+* **Warehouse Code** — das Lager, aus dem der Bestand gemeldet wird. Liegt er
+  nicht vor, darf das Feld in den Einstellungen leer bleiben: Es wird dann nicht
+  mitgesendet, und Tiger One antwortet selbst, ob der Feed ohne Lagerangabe
+  auskommt. Ein Code wird nicht geraten.
   Für unser Sortiment sind das die Codes von Seedsman, Sweet Seeds, Sensi Seeds,
   Amsterdam Genetics, Buddha Seeds, Serious Seeds, TerpyZ, Pyramid, Ripper,
   Silent Seeds, Nirvana und Fast Buds.
