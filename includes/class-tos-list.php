@@ -19,7 +19,7 @@ class TOS_List {
 		}
 
 		// Auch hier darf ein Google-Tabellen-Link aus dem Browser stehen.
-		$res = TOS_Sheet::fetch( TOS_Sheet::csv_url( $url ) );
+		$res = TOS_Sheet::fetch_any( $url );
 		if ( is_wp_error( $res ) ) {
 			return $res;
 		}

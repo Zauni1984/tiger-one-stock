@@ -1,5 +1,5 @@
 === Tiger One Stock Sync ===
-Stable tag: 2.0.0
+Stable tag: 2.0.1
 Requires PHP: 7.4
 Requires at least: 6.0
 WC requires at least: 8.0
@@ -31,6 +31,22 @@ Erwartet werden diese Spalten (Groß-/Kleinschreibung und Leerzeichen egal):
 
 Stand 14.09.2026: 10.927 Zeilen, 10.902 Artikelnummern, ein Lager
 (`MALAGALIVE`), 136 Marken.
+
+=== Mehrere Wege zur Tabelle (seit 2.0.1) ===
+
+Google beantwortet den CSV-Export mit Blattangabe (`export?format=csv&gid=…`)
+je nach Tabelle mit einer Weiterleitung, die für nicht angemeldete Abrufe in
+**HTTP 400** endet — genau das passierte mit der Tiger-One-Tabelle. Das Plugin
+probiert deshalb der Reihe nach:
+
+1. `…/export?format=csv&gid=…` — exaktes Blatt
+2. `…/gviz/tq?tqx=out:csv&gid=…` — exaktes Blatt, unempfindlich gegen den Fehler
+3. `…/export?format=csv` — erstes Blatt
+4. `…/gviz/tq?tqx=out:csv` — erstes Blatt
+
+Der erste Weg, der CSV liefert, wird genommen; welcher das war, steht unter
+„Tabelle prüfen" und im Protokoll. Geprüft am 14.09.2026: Weg 1 = 400,
+Weg 2 = 200, Weg 3 = 200, alle mit denselben 10.927 Zeilen.
 
 In den Einstellungen genügt der Link aus dem Browser
 (`https://docs.google.com/spreadsheets/d/…/edit?gid=…`) — der CSV-Export wird

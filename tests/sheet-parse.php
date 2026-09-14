@@ -14,7 +14,7 @@ if ( PHP_SAPI !== 'cli' ) {
 }
 
 define( 'ABSPATH', '/tmp/' );
-define( 'TOS_VERSION', '2.0.0' );
+define( 'TOS_VERSION', '2.0.1' );
 
 class WP_Error {
 	public $code;
@@ -71,6 +71,18 @@ check(
 	TOS_Sheet::csv_url( 'https://example.com/bestand.csv' ),
 	'https://example.com/bestand.csv'
 );
+
+$cand = TOS_Sheet::candidates( 'https://docs.google.com/spreadsheets/d/ABC123/edit?gid=42' );
+check( 'candidates: vier Wege', count( $cand ), 4 );
+check( 'candidates: 1. Export mit gid', $cand[0]['url'], 'https://docs.google.com/spreadsheets/d/ABC123/export?format=csv&gid=42' );
+check( 'candidates: 2. gviz mit gid', $cand[1]['url'], 'https://docs.google.com/spreadsheets/d/ABC123/gviz/tq?tqx=out:csv&gid=42' );
+check( 'candidates: 3. Export ohne gid', $cand[2]['url'], 'https://docs.google.com/spreadsheets/d/ABC123/export?format=csv' );
+check(
+	'candidates: &amp; im Link stört nicht',
+	TOS_Sheet::candidates( 'https://docs.google.com/spreadsheets/d/ABC123/edit?format=csv&amp;gid=42' )[0]['url'],
+	'https://docs.google.com/spreadsheets/d/ABC123/export?format=csv&gid=42'
+);
+check( 'candidates: fremder Link bleibt einer', count( TOS_Sheet::candidates( 'https://example.com/bestand.csv' ) ), 1 );
 
 /* -------------------------------------------------------------------- Lesen */
 

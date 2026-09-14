@@ -80,7 +80,15 @@ class TOS_Admin {
 
 		$sheet = TOS_Sheet::load();
 		if ( is_wp_error( $sheet ) ) {
-			$out['error'] = $sheet->get_error_message();
+			$out['error']    = $sheet->get_error_message();
+			$out['attempts'] = array();
+			foreach ( TOS_Sheet::candidates( $url, TOS_Settings::get( 'sheet_gid', '' ) ) as $c ) {
+				$out['attempts'][] = array(
+					'url'    => $c['url'],
+					'label'  => $c['label'],
+					'result' => 'nicht erfolgreich',
+				);
+			}
 			set_transient( 'tos_test_result', $out, 900 );
 			self::back( 'tos', array( 'tested' => 1 ) );
 		}
@@ -91,6 +99,9 @@ class TOS_Admin {
 		$out['warnings']   = $sheet['warnings'];
 		$out['bytes']      = $sheet['bytes'];
 		$out['articles']   = (int) $sheet['stats']['used'];
+		$out['label']      = $sheet['label'];
+		$out['attempts']   = $sheet['attempts'];
+		$out['url']        = $sheet['url'];
 		$out['matched']    = TOS_Matcher::matched_count( array_keys( $sheet['articles'] ) );
 		$out['sample']     = array_slice( $sheet['articles'], 0, 8 );
 		$out['warehouses'] = (array) ( $sheet['stats']['warehouses'] ?? array() );

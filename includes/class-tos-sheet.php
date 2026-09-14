@@ -39,7 +39,8 @@ class TOS_Sheet {
 	 * @return string
 	 */
 	public static function csv_url( $url, $gid = '' ) {
-		$url = trim( (string) $url );
+		// &amp; / &#038; entstehen, wenn ein Link aus einer Seite kopiert wurde.
+		$url = trim( html_entity_decode( (string) $url, ENT_QUOTES, 'UTF-8' ) );
 		$gid = trim( (string) $gid );
 		if ( $url === '' ) {
 			return '';
@@ -62,6 +63,128 @@ class TOS_Sheet {
 
 		// Alles andere (z. B. ein direkter CSV-Link) bleibt, wie es ist.
 		return $url;
+	}
+
+	/**
+	 * Alle Wege, die zu derselben Tabelle führen — in der Reihenfolge, in der
+	 * sie probiert werden.
+	 *
+	 * Warum mehrere: Google beantwortet den CSV-Export mit gid je nach Tabelle
+	 * und Tageslaune mit einer Weiterleitung, die für nicht angemeldete Abrufe
+	 * in HTTP 400 endet. Der gviz-Weg liefert dieselben Daten und ist davon
+	 * nicht betroffen; der Export ohne gid nimmt das erste Blatt. Geprüft am
+	 * 14.09.2026 an der Tiger-One-Tabelle: Export mit gid = 400,
+	 * gviz mit gid = 200, Export ohne gid = 200, jeweils 10.927 Zeilen.
+	 *
+	 * @return array<int,array{url:string,label:string}>
+	 */
+	public static function candidates( $url, $gid = '' ) {
+		$url = trim( html_entity_decode( (string) $url, ENT_QUOTES, 'UTF-8' ) );
+		$gid = trim( (string) $gid );
+		if ( $url === '' ) {
+			return array();
+		}
+		if ( $gid === '' && preg_match( '/[#?&]gid=(\d+)/', $url, $m ) ) {
+			$gid = $m[1];
+		}
+
+		$out = array();
+
+		if ( preg_match( '#^(https://docs\.google\.com/spreadsheets/d/e/[^/]+)/pub#i', $url, $m ) ) {
+			$base = $m[1];
+			if ( $gid !== '' ) {
+				$out[] = array(
+					'url'   => $base . '/pub?output=csv&gid=' . rawurlencode( $gid ),
+					'label' => 'veröffentlichte Tabelle, Blatt ' . $gid,
+				);
+			}
+			$out[] = array(
+				'url'   => $base . '/pub?output=csv',
+				'label' => 'veröffentlichte Tabelle',
+			);
+			return $out;
+		}
+
+		if ( preg_match( '#^(https://docs\.google\.com/spreadsheets/d/[A-Za-z0-9_-]+)#i', $url, $m ) ) {
+			$base = $m[1];
+			if ( $gid !== '' ) {
+				$out[] = array(
+					'url'   => $base . '/export?format=csv&gid=' . rawurlencode( $gid ),
+					'label' => 'CSV-Export, Blatt ' . $gid,
+				);
+				$out[] = array(
+					'url'   => $base . '/gviz/tq?tqx=out:csv&gid=' . rawurlencode( $gid ),
+					'label' => 'gviz-Abfrage, Blatt ' . $gid,
+				);
+			}
+			$out[] = array(
+				'url'   => $base . '/export?format=csv',
+				'label' => $gid !== '' ? 'CSV-Export, erstes Blatt' : 'CSV-Export',
+			);
+			$out[] = array(
+				'url'   => $base . '/gviz/tq?tqx=out:csv',
+				'label' => 'gviz-Abfrage, erstes Blatt',
+			);
+			return $out;
+		}
+
+		// Fremde Adresse: unverändert benutzen.
+		return array(
+			array(
+				'url'   => $url,
+				'label' => 'direkter Link',
+			),
+		);
+	}
+
+	/**
+	 * Probiert die Wege der Reihe nach und nimmt den ersten, der CSV liefert.
+	 *
+	 * @return array{body:string,url:string,label:string,attempts:array<int,array{url:string,label:string,result:string}>}|WP_Error
+	 */
+	public static function fetch_any( $url, $gid = '' ) {
+		$list = self::candidates( $url, $gid );
+		if ( ! $list ) {
+			return new WP_Error( 'tos_sheet_url', 'Es ist keine Adresse für das Bestands-Sheet hinterlegt.' );
+		}
+
+		$attempts = array();
+		$first_err = '';
+		foreach ( $list as $c ) {
+			$res = self::fetch( $c['url'] );
+			if ( is_wp_error( $res ) ) {
+				$attempts[] = array(
+					'url'    => $c['url'],
+					'label'  => $c['label'],
+					'result' => $res->get_error_message(),
+				);
+				if ( $first_err === '' ) {
+					$first_err = $res->get_error_message();
+				}
+				continue;
+			}
+			$attempts[] = array(
+				'url'    => $c['url'],
+				'label'  => $c['label'],
+				'result' => sprintf( 'gelesen (%s)', size_format( $res['bytes'] ) ),
+			);
+			return array(
+				'body'     => $res['body'],
+				'url'      => $c['url'],
+				'label'    => $c['label'],
+				'bytes'    => $res['bytes'],
+				'attempts' => $attempts,
+			);
+		}
+
+		$lines = array();
+		foreach ( $attempts as $a ) {
+			$lines[] = sprintf( '%s: %s', $a['label'], $a['result'] );
+		}
+		return new WP_Error(
+			'tos_sheet_all',
+			'Keiner der Wege zur Tabelle hat funktioniert. ' . implode( ' | ', $lines )
+		);
 	}
 
 	/* ------------------------------------------------------------ Holen */
@@ -337,9 +460,8 @@ class TOS_Sheet {
 		if ( $url === '' ) {
 			return new WP_Error( 'tos_sheet_url', 'Es ist keine Adresse für das Bestands-Sheet hinterlegt.' );
 		}
-		$csv_url = self::csv_url( $url, TOS_Settings::get( 'sheet_gid', '' ) );
 
-		$res = self::fetch( $csv_url );
+		$res = self::fetch_any( $url, TOS_Settings::get( 'sheet_gid', '' ) );
 		if ( is_wp_error( $res ) ) {
 			return $res;
 		}
@@ -347,8 +469,10 @@ class TOS_Sheet {
 		if ( is_wp_error( $parsed ) ) {
 			return $parsed;
 		}
-		$parsed['url']   = $csv_url;
-		$parsed['bytes'] = $res['bytes'];
+		$parsed['url']      = $res['url'];
+		$parsed['label']    = $res['label'];
+		$parsed['bytes']    = $res['bytes'];
+		$parsed['attempts'] = $res['attempts'];
 		return $parsed;
 	}
 

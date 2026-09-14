@@ -51,6 +51,7 @@ class TOS_Sync {
 
 		$report['source'] = array(
 			'url'        => $sheet['url'],
+			'label'      => $sheet['label'] ?? '',
 			'rows'       => (int) $stats['rows'],
 			'used'       => (int) $stats['used'],
 			'duplicates' => (int) $stats['duplicates'],
@@ -63,7 +64,8 @@ class TOS_Sync {
 		}
 		TOS_Logger::info(
 			sprintf(
-				'Bestandstabelle gelesen: %d Zeilen, %d Artikelnummern, %d davon mit Bestand 0. Lager: %s.',
+				'Bestandstabelle gelesen (%s): %d Zeilen, %d Artikelnummern, %d davon mit Bestand 0. Lager: %s.',
+				(string) ( $sheet['label'] ?? 'CSV' ),
 				(int) $stats['rows'],
 				(int) $stats['used'],
 				(int) $stats['zero'],

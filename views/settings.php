@@ -20,7 +20,14 @@ $csv_url   = TOS_Sheet::csv_url( TOS_Settings::sheet_url(), $s['sheet_gid'] );
 		<div class="notice <?php echo empty( $test['error'] ) ? 'notice-info' : 'notice-error'; ?>">
 			<?php if ( ! empty( $test['error'] ) ) : ?>
 				<p><strong>Die Tabelle ließ sich nicht lesen:</strong> <?php echo esc_html( $test['error'] ); ?></p>
-				<?php if ( ! empty( $test['url'] ) ) : ?>
+				<?php if ( ! empty( $test['attempts'] ) ) : ?>
+					<p>Versuchte Adressen:</p>
+					<ul style="margin-left:1.5em">
+						<?php foreach ( $test['attempts'] as $a ) : ?>
+							<li><?php echo esc_html( $a['label'] ); ?>: <code><?php echo esc_html( $a['url'] ); ?></code></li>
+						<?php endforeach; ?>
+					</ul>
+				<?php elseif ( ! empty( $test['url'] ) ) : ?>
 					<p>Verwendete Adresse: <code><?php echo esc_html( $test['url'] ); ?></code></p>
 				<?php endif; ?>
 			<?php else : ?>
@@ -37,7 +44,8 @@ $csv_url   = TOS_Sheet::csv_url( TOS_Settings::sheet_url(), $s['sheet_gid'] );
 					?>
 				</p>
 				<p>
-					Adresse: <code><?php echo esc_html( $test['url'] ); ?></code><br>
+					Gelesen über <strong><?php echo esc_html( $test['label'] ?? 'CSV' ); ?></strong>:
+					<code><?php echo esc_html( $test['url'] ); ?></code><br>
 					Spalten: <code><?php echo esc_html( implode( ' | ', (array) $test['header'] ) ); ?></code>
 					<?php if ( ! empty( $test['warehouses'] ) ) : ?>
 						<br>Lager in der Tabelle:
@@ -131,7 +139,12 @@ $csv_url   = TOS_Sheet::csv_url( TOS_Settings::sheet_url(), $s['sheet_gid'] );
 					<input type="url" id="sheet_url" name="sheet_url" value="<?php echo esc_attr( $url_const ? '' : $s['sheet_url'] ); ?>" class="large-text" <?php disabled( $url_const ); ?>
 						placeholder="https://docs.google.com/spreadsheets/d/…/edit?gid=…">
 					<?php if ( $url_const ) : ?><p class="description">Kommt aus der <code>wp-config.php</code>.</p><?php endif; ?>
-					<p class="description">Abgerufen wird: <code><?php echo esc_html( $csv_url !== '' ? $csv_url : '—' ); ?></code></p>
+					<p class="description">
+						Abgerufen wird: <code><?php echo esc_html( $csv_url !== '' ? $csv_url : '—' ); ?></code><br>
+						Antwortet Google darauf mit einem Fehler, probiert das Plugin automatisch die
+						gviz-Abfrage und den Export ohne Blattangabe — welcher Weg geklappt hat, steht
+						unter „Tabelle prüfen" und im Protokoll.
+					</p>
 				</td>
 			</tr>
 			<tr>

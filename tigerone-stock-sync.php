@@ -3,7 +3,7 @@
  * Plugin Name: Tiger One Stock Sync
  * Plugin URI:  https://hanfjack.de/
  * Description: Hält den Warenbestand der Tiger-One-Artikel aktuell. Der Bestand kommt aus dem Live-Bestands-Sheet von Tiger One (Google-Tabelle als CSV), der Abgleich läuft über die Artikelnummer (SKU) — auch auf Variantenebene. Zusätzlich wird ein Katalog aller gesehenen Tiger-One-Artikelnummern geführt.
- * Version:     2.0.0
+ * Version:     2.0.1
  * Author:      hanfjack.de
  * Text Domain: tigerone-stock-sync
  * Requires PHP: 7.4
@@ -13,7 +13,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'TOS_VERSION', '2.0.0' );
+define( 'TOS_VERSION', '2.0.1' );
 define( 'TOS_FILE', __FILE__ );
 define( 'TOS_PATH', plugin_dir_path( __FILE__ ) );
 define( 'TOS_URL', plugin_dir_url( __FILE__ ) );
