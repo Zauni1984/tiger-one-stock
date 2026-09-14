@@ -5,8 +5,9 @@ defined( 'ABSPATH' ) || exit;
  * Der eigentliche Bestandslauf.
  *
  * Zwei Regeln gelten überall:
- *   1. Angefasst werden nur Produkte und Varianten, deren SKU im Tiger-One-Feed
- *      steht. Eigenbestand („HJ-…") ist für dieses Plugin unsichtbar.
+ *   1. Angefasst werden nur Produkte und Varianten, deren SKU in der
+ *      Tiger-One-Bestandstabelle steht. Eigenbestand („HJ-…") ist für dieses
+ *      Plugin unsichtbar.
  *   2. Geschrieben werden ausschließlich Bestandsmenge und Bestandsstatus.
  *      Preise, Texte, Status, Kategorien und Attribute bleiben unberührt.
  */
@@ -22,8 +23,7 @@ class TOS_Sync {
 			'run_id'    => $run_id,
 			'dry_run'   => $dry_run,
 			'started'   => current_time( 'mysql' ),
-			'brands'    => array(),
-			'shape'     => '',
+			'source'    => array(),
 			'articles'  => 0,
 			'matched'   => 0,
 			'new_art'   => 0,
@@ -39,56 +39,41 @@ class TOS_Sync {
 
 		TOS_Logger::info( $dry_run ? 'Trockenlauf gestartet.' : 'Abgleich gestartet.' );
 
-		/* ---------------------------------------------------- 1. Feed holen */
-		$brand_codes = TOS_Settings::brand_codes();
-		if ( ! $brand_codes ) {
-			return self::fail( $report, 'Es ist kein Brand Code hinterlegt. Ohne Marken-Code liefert der Stock Feed keine Daten.' );
+		/* ---------------------------------------------------- 1. Bestandstabelle holen */
+		$sheet = TOS_Sheet::load();
+		if ( is_wp_error( $sheet ) ) {
+			return self::fail( $report, $sheet->get_error_message() );
 		}
-		$warehouse = TOS_Settings::credential( 'warehouse_code' );
 
-		$articles = array();
-		foreach ( $brand_codes as $bc ) {
-			$res = TOS_API::brand_stock( $bc );
-			if ( is_wp_error( $res ) ) {
-				$msg                = sprintf( 'Brand Code %s: %s', $bc, $res->get_error_message() );
-				$report['errors'][] = $msg;
-				TOS_Logger::error( $msg );
-				continue;
-			}
-			$parsed = TOS_Feed::parse( $res['payload'], $bc, $warehouse );
-			if ( is_wp_error( $parsed ) ) {
-				$msg                = sprintf( 'Brand Code %s: %s', $bc, $parsed->get_error_message() );
-				$report['errors'][] = $msg;
-				TOS_Logger::error( $msg );
-				TOS_Logger::info( 'Rohantwort (gekürzt): ' . mb_substr( $res['raw'], 0, 2000 ) );
-				continue;
-			}
-			$report['shape']    = $parsed['shape'];
-			$report['brands'][] = array(
-				'code'     => (string) $bc,
-				'articles' => count( $parsed['articles'] ),
-			);
-			foreach ( $parsed['warnings'] as $w ) {
-				TOS_Logger::warn( sprintf( 'Brand Code %s: %s', $bc, $w ) );
-			}
-			foreach ( $parsed['articles'] as $code => $a ) {
-				$articles[ $code ] = $a;   // spätere Marke gewinnt bei Dubletten
-			}
-			TOS_Logger::info(
-				sprintf(
-					'Brand Code %s: %d Artikel aus dem Feed (%s, %s, HTTP %d).',
-					$bc,
-					count( $parsed['articles'] ),
-					$parsed['shape'],
-					$res['transport'],
-					$res['http']
-				)
-			);
+		$articles = $sheet['articles'];
+		$stats    = $sheet['stats'];
+		$lager    = array_keys( (array) ( $stats['warehouses'] ?? array() ) );
+
+		$report['source'] = array(
+			'url'        => $sheet['url'],
+			'rows'       => (int) $stats['rows'],
+			'used'       => (int) $stats['used'],
+			'duplicates' => (int) $stats['duplicates'],
+			'zero'       => (int) $stats['zero'],
+			'warehouses' => $lager,
+		);
+
+		foreach ( $sheet['warnings'] as $w ) {
+			TOS_Logger::warn( $w );
 		}
+		TOS_Logger::info(
+			sprintf(
+				'Bestandstabelle gelesen: %d Zeilen, %d Artikelnummern, %d davon mit Bestand 0. Lager: %s.',
+				(int) $stats['rows'],
+				(int) $stats['used'],
+				(int) $stats['zero'],
+				$lager ? implode( ', ', $lager ) : 'ohne Angabe'
+			)
+		);
 
 		$report['articles'] = count( $articles );
 		if ( ! $articles ) {
-			return self::fail( $report, 'Der Stock Feed hat für keinen Brand Code verwertbare Artikel geliefert. Es wurde nichts geändert.' );
+			return self::fail( $report, 'Die Bestandstabelle enthielt keine verwertbaren Artikel. Es wurde nichts geändert.' );
 		}
 
 		/* ---------------------------------------------------- 2. Notbremse: zu wenige Artikel */
@@ -97,7 +82,7 @@ class TOS_Sync {
 			return self::fail(
 				$report,
 				sprintf(
-					'Abbruch aus Sicherheitsgründen: Der Feed enthält nur %d Artikel, erwartet werden mindestens %d. Es wurde nichts geändert.',
+					'Abbruch aus Sicherheitsgründen: Die Tabelle enthält nur %d Artikel, erwartet werden mindestens %d. Es wurde nichts geändert.',
 					$report['articles'],
 					$min_rows
 				)
@@ -150,8 +135,8 @@ class TOS_Sync {
 		foreach ( $linked as $key => $post_ids ) {
 			$has = isset( $by_key[ $key ] );
 
-			// Steht die SKU nicht im heutigen Feed, wird sie nur angefasst, wenn sie
-			// schon einmal in einem Tiger-One-Feed stand. Sonst wäre jede fremde
+			// Steht die SKU nicht in der heutigen Tabelle, wird sie nur angefasst, wenn sie
+			// schon einmal in einer Tiger-One-Bestandstabelle stand. Sonst wäre jede fremde
 			// Lieferanten-SKU im Shop plötzlich ein Tiger-One-Artikel.
 			if ( ! $has && ! isset( $known[ $key ] ) ) {
 				continue;
@@ -185,7 +170,7 @@ class TOS_Sync {
 					if ( $raw <= (float) $s['threshold'] ) {
 						$raw = 0;
 					}
-					$target = (int) round( $raw );
+					$target = (int) floor( $raw );
 				}
 
 				$plan[] = array(
@@ -208,7 +193,7 @@ class TOS_Sync {
 			return self::fail(
 				$report,
 				sprintf(
-					'Abbruch aus Sicherheitsgründen: %s %% der verknüpften Produkte (%d von %d) würden auf „ausverkauft" gesetzt — die Grenze liegt bei %s %%. Das deutet auf einen fehlerhaften Feed hin. Es wurde nichts geändert.',
+					'Abbruch aus Sicherheitsgründen: %s %% der verknüpften Produkte (%d von %d) würden auf „ausverkauft" gesetzt — die Grenze liegt bei %s %%. Das deutet auf eine unvollständige Tabelle hin. Es wurde nichts geändert.',
 					number_format_i18n( $ratio, 1 ),
 					$report['to_zero'],
 					count( $plan ),
@@ -251,7 +236,7 @@ class TOS_Sync {
 				'to'     => $target,
 				'qty'    => $write_qty,
 				'status' => $b_stat . ' → ' . $status,
-				'reason' => $p['missing'] ? 'nicht mehr im Feed' : 'Bestandsmeldung',
+				'reason' => $p['missing'] ? 'nicht mehr in der Tabelle' : 'Bestandsmeldung',
 			);
 			++$report['updated'];
 

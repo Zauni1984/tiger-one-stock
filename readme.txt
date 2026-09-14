@@ -1,76 +1,80 @@
 === Tiger One Stock Sync ===
-Stable tag: 1.0.0
+Stable tag: 2.0.0
 Requires PHP: 7.4
 Requires at least: 6.0
 WC requires at least: 8.0
 
 Hält den Warenbestand der Tiger-One-Artikel auf hanfjack.de aktuell. Der Bestand
-kommt direkt aus dem Tiger-One-ERP (Stock Feed je Marke), der Abgleich läuft über
-die Artikelnummer (SKU) — auch auf Variantenebene.
+kommt aus dem **Live-Bestands-Sheet von Tiger One** — einer Google-Tabelle, die
+als CSV gelesen wird. Der Abgleich läuft über die Artikelnummer (SKU), auch auf
+Variantenebene.
 
-== Was Tiger One dafür herausgeben muss ==
+== Warum Tabelle statt API (seit 2.0.0) ==
 
-Zwingend für den Bestandsabgleich:
+Bis 1.0.0 holte das Plugin den Bestand über den Stock Feed des Tiger-One-ERP.
+Dieser Weg braucht je Marke einen Brand Code, den Tiger One nicht herausgegeben
+hat — ohne Brand Code antwortet der Feed nur „Brand not found.". Tiger One
+liefert den Live-Bestand stattdessen als Tabelle. Genau die ist jetzt die
+Quelle; der API-Weg ist entfallen, samt Token, Consumer Key und Secret.
 
-* **Brand Code** je Marke — der Feed liefert immer genau eine Marke pro Abruf.
-  Ohne Brand Code antwortet der Server nur „Brand not found."
+== Die Tabelle ==
 
-Im Onboarding zusätzlich als zwingend genannt, in der Praxis erst zu prüfen:
+Erwartet werden diese Spalten (Groß-/Kleinschreibung und Leerzeichen egal):
 
-* **Warehouse Code** — das Lager, aus dem der Bestand gemeldet wird. Liegt er
-  nicht vor, darf das Feld in den Einstellungen leer bleiben: Es wird dann nicht
-  mitgesendet, und Tiger One antwortet selbst, ob der Feed ohne Lagerangabe
-  auskommt. Ein Code wird nicht geraten.
-  Für unser Sortiment sind das die Codes von Seedsman, Sweet Seeds, Sensi Seeds,
-  Amsterdam Genetics, Buddha Seeds, Serious Seeds, TerpyZ, Pyramid, Ripper,
-  Silent Seeds, Nirvana und Fast Buds.
+| Spalte           | Bedeutung                                  |
+| ---------------- | ------------------------------------------ |
+| `SKU`            | Artikelnummer — der Schlüssel zum Shop     |
+| `Quantity`       | Bestand                                    |
+| `Brand`          | Marke (nur Katalog und optionaler Filter)  |
+| `Warehouse`      | Lagername (informativ)                     |
+| `Warehouse Code` | Lagerschlüssel, z. B. `MALAGALIVE`         |
 
-Nicht nötig für den Bestand, nur für das Übertragen von Bestellungen:
+Stand 14.09.2026: 10.927 Zeilen, 10.902 Artikelnummern, ein Lager
+(`MALAGALIVE`), 136 Marken.
 
-* **Customer Code**, **Consumer Key**, **Secret Key**.
+In den Einstellungen genügt der Link aus dem Browser
+(`https://docs.google.com/spreadsheets/d/…/edit?gid=…`) — der CSV-Export wird
+daraus selbst gebaut. Ein fertiger CSV-Link oder eine veröffentlichte Tabelle
+(`/pub?output=csv`) funktionieren ebenso. Die Tabelle muss für „Jeder mit dem
+Link — Betrachter" lesbar sein, sonst antwortet Google mit einer HTML-Seite;
+das Plugin sagt das dann genau so.
 
-Alle Werte dürfen in der `wp-config.php` stehen und haben dort Vorrang vor der
-Datenbank:
+Die Adresse darf auch in der `wp-config.php` stehen und hat dort Vorrang:
 
-    define( 'TIGERONE_WAREHOUSE_CODE', '…' );
-    define( 'TIGERONE_BRAND_CODES',    '1021,1044' );
-    define( 'TIGERONE_CONSUMER_KEY',   '…' );
-    define( 'TIGERONE_CONSUMER_SECRET','…' );
+    define( 'TIGERONE_SHEET_URL', 'https://docs.google.com/spreadsheets/d/…' );
 
-== Stand der Schnittstelle (geprüft am 11.09.2026) ==
+== Was die Tabelle nicht liefert ==
 
-Das Onboarding-Dokument (Dropshipping Onboarding v3.1) beschreibt den Stock Feed
-knapp. Nachgeprüft gilt:
+Namen und Preise stehen nicht in der Bestandstabelle. Wer im Katalog Klartext
+sehen will, hinterlegt zusätzlich die Tiger-One-Artikelliste (Abschnitt
+„Artikelliste"). Sie geht ausschließlich in den Katalog dieses Plugins, nie in
+Produkte und nie in den Bestand.
 
-* Der Feed ist eine Odoo-Route und antwortet **nur auf GET mit JSON-Körper**.
-  Ein POST wird mit HTTP 405 abgelehnt.
-* `http://` wird auf `https://` umgeleitet — das Plugin ruft direkt `https://` auf.
-* **Ein Token ist nicht nötig.** Der Feed antwortet ohne Authorization-Header.
-* Die Antwort ist ein JSON-RPC-Umschlag, in dem das Ergebnis noch einmal als
-  JSON-Zeichenkette steckt:
+== Regeln beim Lesen ==
 
-      {"jsonrpc": "2.0", "id": null, "result": "{\"error\": \"Brand not found.\"}"}
-
-* Das Token-Endpunkt-Beispiel im Dokument ist falsch: `/oauth2/access_token`
-  erwartet ein **Formular**, nicht JSON. Mit JSON antwortet der Server HTTP 500,
-  mit Formulardaten korrekt `{"error": "Unuthorized_client", …}`.
-* Wie die Antwort bei einem **gültigen** Brand Code aufgebaut ist, ist nicht
-  dokumentiert. Das Plugin erkennt die üblichen Formen selbst (Liste von
-  Objekten, Liste unter `data`/`stock`/`products`, flache Zuordnung
-  Artikelnummer => Menge) und zeigt unter „Verbindung testen" immer die
-  Rohantwort — damit lässt sich die Zuordnung beim ersten echten Abruf in
-  Minuten nachziehen.
+* Zeilen ohne Artikelnummer oder ohne lesbare Menge werden gezählt und
+  übersprungen — geschätzt wird nichts.
+* `TRUE`/`FALSE` als Artikelnummer (verrutschte Tabellenformeln) gelten nicht
+  als Artikel.
+* Steht eine SKU mehrfach in der Tabelle, werden die Mengen standardmäßig
+  addiert (umstellbar auf größte Menge, erste oder letzte Zeile).
+* Der Bestand wird **abgerundet** in den Shop geschrieben: aus 0,5 wird 0. Der
+  Shop bietet damit nie mehr an, als Tiger One meldet.
+* Optional lässt sich auf ein Lager (`Warehouse Code`) oder auf bestimmte
+  Marken einschränken.
 
 == Sicherheitsregeln ==
 
 * SKUs mit dem Präfix `HJ-` (Eigenbestand) werden **nie** angefasst.
 * Geschrieben werden ausschließlich Bestandsmenge und Bestandsstatus. Preise,
   Texte, Produktstatus, Kategorien und Attribute bleiben unberührt.
-* Nur Artikelnummern, die mindestens einmal in einem Tiger-One-Feed standen,
-  gelten als Tiger-One-Ware. Produkte anderer Lieferanten sind unsichtbar.
+* Nur Artikelnummern, die mindestens einmal in einer Tiger-One-Bestandstabelle
+  standen, gelten als Tiger-One-Ware. Produkte anderer Lieferanten sind
+  unsichtbar.
 * Zwei Notbremsen brechen den Lauf ab, ohne etwas zu ändern: zu wenige Artikel
-  im Feed (`min_rows`) und ein zu hoher Anteil an Nullstellungen
-  (`max_zero_ratio`, Standard 30 %).
+  in der Tabelle (`min_rows`) und ein zu hoher Anteil an Nullstellungen
+  (`max_zero_ratio`, Standard 30 %). Letzteres fängt eine halb geladene oder
+  gefilterte Tabelle ab.
 * Einzelne Produkte lassen sich am Produkt selbst dauerhaft ausnehmen
   („Vom Tiger-One-Abgleich ausnehmen").
 * Ein Trockenlauf zeigt jede geplante Änderung, ohne zu schreiben.
@@ -83,20 +87,27 @@ berücksichtigt Produkte und Varianten gleichberechtigt und berechnet nach einer
 Variantenänderung das Elternprodukt neu, damit Preisspanne und Bestandsstatus
 des Elternprodukts stimmen.
 
-== Artikelliste (optional) ==
-
-Die öffentliche Tiger-One-Artikelliste enthält Namen, Marke und Preise, aber
-**keinen Bestand**. Sie wird deshalb nur in den Katalog dieses Plugins
-geschrieben, nie in Produkte. Nützlich für zwei Dinge: neue Artikel erkennen, die
-es im Shop noch nicht gibt, und Klartextnamen im Katalog, auch wenn der Feed nur
-Artikelnummern liefert.
-
 == Bedienung ==
 
-1. Warehouse Code und Brand Codes eintragen, speichern.
-2. „Verbindung testen" — zeigt je Marke, wie viele Artikel erkannt wurden, wie
-   viele davon eine SKU im Shop haben, und die Rohantwort.
+1. Link zur Tabelle eintragen (Standard ist bereits das Live-Sheet), speichern.
+2. „Tabelle prüfen" — zeigt Spalten, Lager, Zeilen, wie viele Artikelnummern
+   eine SKU im Shop haben, und eine Stichprobe.
 3. „Trockenlauf" — listet jede Änderung, die der erste echte Lauf machen würde.
 4. Erst wenn das passt: „Bestand regelmäßig abgleichen" einschalten.
 
 Menü: **Tiger One** → Einstellungen · Artikelkatalog · Protokoll.
+
+== Prüfen ohne WordPress ==
+
+    php tests/sheet-parse.php                    # Regeln und Entscheidungen
+    php tests/sheet-parse.php live-tabelle.csv   # echte Tabelle gegenprüfen
+
+== Umstieg von 1.0.0 ==
+
+Katalog, Protokoll, Ausnahmen am Produkt und alle Abgleich-Einstellungen
+bleiben erhalten. Nicht mehr vorhanden sind API-Adresse, Warehouse Code als
+Zugangsdatum, Brand Codes, Customer Code, Consumer Key/Secret und die
+Token-Option; die alten Werte bleiben unbenutzt in der Option stehen und
+richten keinen Schaden an. Neu sind Tabellenadresse, Tabellenblatt (gid),
+Spaltennamen, Lager- und Markenfilter sowie die Regel für doppelte
+Artikelnummern.

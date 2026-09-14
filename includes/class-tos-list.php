@@ -2,13 +2,12 @@
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Optional: die öffentliche Tiger-One-Artikelliste (CSV).
+ * Optional: eine zusätzliche Artikelliste (CSV) mit Namen, Marke und Preisen.
  *
- * Die Liste enthält Namen, Marke und Preise, aber keinen Bestand. Sie wird
- * deshalb nur in den Katalog dieses Plugins geschrieben — niemals in Produkte.
- * Nützlich ist sie für zwei Dinge: neue Artikel erkennen, die es im Shop noch
- * nicht gibt, und Klartextnamen im Katalog, auch wenn der Stock Feed nur
- * Artikelnummern liefert.
+ * Die Bestandstabelle von Tiger One führt nur Artikelnummer, Menge, Marke und
+ * Lager. Wer im Katalog Klartextnamen und Preise sehen will, hinterlegt hier
+ * zusätzlich die Artikelliste. Sie wird ausschließlich in den Katalog dieses
+ * Plugins geschrieben — niemals in Produkte, und niemals in den Bestand.
  */
 class TOS_List {
 
@@ -19,39 +18,22 @@ class TOS_List {
 			return new WP_Error( 'tos_list_url', 'Es ist keine Adresse für die Artikelliste hinterlegt.' );
 		}
 
-		$resp = wp_remote_get(
-			$url,
-			array(
-				'timeout'     => max( 20, (int) TOS_Settings::get( 'http_timeout', 45 ) ),
-				'redirection' => 5,
-				'headers'     => array( 'Accept' => 'text/csv,text/plain,*/*' ),
-			)
-		);
-		if ( is_wp_error( $resp ) ) {
-			return $resp;
-		}
-		$code = (int) wp_remote_retrieve_response_code( $resp );
-		if ( $code < 200 || $code >= 300 ) {
-			return new WP_Error( 'tos_list_http', 'Die Artikelliste ließ sich nicht laden (HTTP ' . $code . ').' );
-		}
-		$body = (string) wp_remote_retrieve_body( $resp );
-		if ( trim( $body ) === '' ) {
-			return new WP_Error( 'tos_list_empty', 'Die Artikelliste ist leer.' );
-		}
-		if ( stripos( ltrim( $body ), '<!doctype html' ) === 0 || stripos( ltrim( $body ), '<html' ) === 0 ) {
-			return new WP_Error( 'tos_list_html', 'Unter der Adresse liegt eine HTML-Seite statt einer CSV-Datei. Bei Google-Tabellen muss der Link auf den CSV-Export zeigen (…/export?format=csv).' );
+		// Auch hier darf ein Google-Tabellen-Link aus dem Browser stehen.
+		$res = TOS_Sheet::fetch( TOS_Sheet::csv_url( $url ) );
+		if ( is_wp_error( $res ) ) {
+			return $res;
 		}
 
-		$csv = self::parse( $body );
+		$csv = TOS_Sheet::read_csv( $res['body'] );
 		if ( is_wp_error( $csv ) ) {
 			return $csv;
 		}
 
 		$cols = array(
-			'sku'   => self::index( $csv['header'], TOS_Settings::get( 'list_col_sku', 'sku' ) ),
-			'name'  => self::index( $csv['header'], TOS_Settings::get( 'list_col_name', 'name' ) ),
-			'brand' => self::index( $csv['header'], TOS_Settings::get( 'list_col_brand', 'brand' ) ),
-			'price' => self::index( $csv['header'], TOS_Settings::get( 'list_col_price', 'retail_price' ) ),
+			'sku'   => TOS_Sheet::column( $csv['header'], TOS_Settings::get( 'list_col_sku', 'sku' ), TOS_Sheet::FALLBACK_SKU ),
+			'name'  => TOS_Sheet::column( $csv['header'], TOS_Settings::get( 'list_col_name', 'name' ), array() ),
+			'brand' => TOS_Sheet::column( $csv['header'], TOS_Settings::get( 'list_col_brand', 'brand' ), array() ),
+			'price' => TOS_Sheet::column( $csv['header'], TOS_Settings::get( 'list_col_price', 'retail_price' ), array() ),
 		);
 		if ( $cols['sku'] === null ) {
 			return new WP_Error( 'tos_list_col', 'In der Liste wurde die Spalte mit der Artikelnummer nicht gefunden. Spaltennamen in den Einstellungen prüfen.' );
@@ -67,7 +49,7 @@ class TOS_List {
 				'code'  => $sku,
 				'name'  => $cols['name'] !== null ? trim( (string) ( $row[ $cols['name'] ] ?? '' ) ) : '',
 				'brand' => $cols['brand'] !== null ? trim( (string) ( $row[ $cols['brand'] ] ?? '' ) ) : '',
-				'price' => $cols['price'] !== null ? TOS_Feed::to_number( $row[ $cols['price'] ] ?? '' ) : null,
+				'price' => $cols['price'] !== null ? TOS_Sheet::to_number( $row[ $cols['price'] ] ?? '' ) : null,
 				'raw'   => array(),
 			);
 		}
@@ -84,77 +66,5 @@ class TOS_List {
 			'rows'     => count( $csv['rows'] ),
 			'header'   => $csv['header'],
 		);
-	}
-
-	/** @return array{header:array,rows:array,delimiter:string}|WP_Error */
-	public static function parse( $body ) {
-		// BOM entfernen, Zeilenenden vereinheitlichen, notfalls nach UTF-8 wandeln.
-		$body = preg_replace( '/^\xEF\xBB\xBF/', '', $body );
-		$body = str_replace( array( "\r\n", "\r" ), "\n", $body );
-		if ( ! mb_check_encoding( $body, 'UTF-8' ) ) {
-			$body = mb_convert_encoding( $body, 'UTF-8', 'Windows-1252, ISO-8859-1' );
-		}
-
-		$first = strtok( $body, "\n" );
-		if ( $first === false ) {
-			return new WP_Error( 'tos_csv', 'Die Datei enthält keine Zeilen.' );
-		}
-		$best  = ',';
-		$score = -1;
-		foreach ( array( ',', ';', "\t", '|' ) as $d ) {
-			$n = count( str_getcsv( $first, $d ) );
-			if ( $n > $score ) {
-				$score = $n;
-				$best  = $d;
-			}
-		}
-
-		$fh = fopen( 'php://temp', 'r+' );
-		if ( ! $fh ) {
-			return new WP_Error( 'tos_csv', 'Die Datei konnte nicht gelesen werden.' );
-		}
-		fwrite( $fh, $body );
-		rewind( $fh );
-
-		$header = fgetcsv( $fh, 0, $best );
-		if ( ! is_array( $header ) ) {
-			fclose( $fh );
-			return new WP_Error( 'tos_csv', 'Die Kopfzeile konnte nicht gelesen werden.' );
-		}
-		$header = array_map( static function ( $h ) {
-			return trim( (string) $h );
-		}, $header );
-
-		$rows = array();
-		while ( ( $row = fgetcsv( $fh, 0, $best ) ) !== false ) {
-			if ( $row === array( null ) ) {
-				continue;
-			}
-			$rows[] = $row;
-		}
-		fclose( $fh );
-
-		return array(
-			'header'    => $header,
-			'rows'      => $rows,
-			'delimiter' => $best,
-		);
-	}
-
-	private static function index( array $header, $want ) {
-		$want = self::normalise( (string) $want );
-		if ( $want === '' ) {
-			return null;
-		}
-		foreach ( $header as $i => $h ) {
-			if ( self::normalise( $h ) === $want ) {
-				return $i;
-			}
-		}
-		return null;
-	}
-
-	private static function normalise( $s ) {
-		return preg_replace( '/[^a-z0-9äöüß]/u', '', mb_strtolower( trim( (string) $s ) ) );
 	}
 }

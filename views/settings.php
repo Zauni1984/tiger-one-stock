@@ -6,10 +6,8 @@ defined( 'ABSPATH' ) || exit;
  * @var mixed $list
  * @var int|false $next
  */
-$wh_const = TOS_Settings::credential_is_constant( 'warehouse_code' );
-$bc_const = TOS_Settings::credential_is_constant( 'brand_codes' );
-$ck_const = TOS_Settings::credential_is_constant( 'consumer_key' );
-$cs_const = TOS_Settings::credential_is_constant( 'consumer_secret' );
+$url_const = TOS_Settings::sheet_url_is_constant();
+$csv_url   = TOS_Sheet::csv_url( TOS_Settings::sheet_url(), $s['sheet_gid'] );
 ?>
 <div class="wrap">
 	<h1>Tiger One Stock Sync</h1>
@@ -21,55 +19,60 @@ $cs_const = TOS_Settings::credential_is_constant( 'consumer_secret' );
 	<?php if ( isset( $_GET['tested'] ) && is_array( $test ) ) : ?>
 		<div class="notice <?php echo empty( $test['error'] ) ? 'notice-info' : 'notice-error'; ?>">
 			<?php if ( ! empty( $test['error'] ) ) : ?>
-				<p><strong>Verbindung fehlgeschlagen:</strong> <?php echo esc_html( $test['error'] ); ?></p>
+				<p><strong>Die Tabelle ließ sich nicht lesen:</strong> <?php echo esc_html( $test['error'] ); ?></p>
+				<?php if ( ! empty( $test['url'] ) ) : ?>
+					<p>Verwendete Adresse: <code><?php echo esc_html( $test['url'] ); ?></code></p>
+				<?php endif; ?>
 			<?php else : ?>
-				<?php foreach ( (array) $test['brands'] as $b ) : ?>
-					<p>
-						<strong>Brand Code <?php echo esc_html( $b['code'] ); ?>:</strong>
-						<?php if ( ! empty( $b['error'] ) ) : ?>
-							<span style="color:#b32d2e"><?php echo esc_html( $b['error'] ); ?></span>
-						<?php else : ?>
-							<?php
-							printf(
-								/* translators: Zusammenfassung des Verbindungstests */
-								esc_html__( '%1$d Artikel erkannt (%2$s), davon %3$d mit einer SKU im Shop. HTTP %4$d über %5$s.', 'tigerone-stock-sync' ),
-								(int) $b['articles'],
-								esc_html( $b['shape'] ),
-								(int) $b['matched'],
-								(int) $b['http'],
-								esc_html( $b['transport'] )
-							);
-							?>
-						<?php endif; ?>
-					</p>
-					<?php if ( ! empty( $b['warnings'] ) ) : ?>
-						<ul style="margin-left:1.5em">
-							<?php foreach ( $b['warnings'] as $w ) : ?>
-								<li><?php echo esc_html( $w ); ?></li>
-							<?php endforeach; ?>
-						</ul>
+				<p>
+					<?php
+					printf(
+						/* translators: Zusammenfassung des Tabellen-Tests */
+						esc_html__( '%1$d Zeilen gelesen, %2$d Artikelnummern übernommen, davon %3$d mit einer SKU im Shop. %4$d Artikel stehen auf 0.', 'tigerone-stock-sync' ),
+						(int) ( $test['stats']['rows'] ?? 0 ),
+						(int) $test['articles'],
+						(int) $test['matched'],
+						(int) ( $test['stats']['zero'] ?? 0 )
+					);
+					?>
+				</p>
+				<p>
+					Adresse: <code><?php echo esc_html( $test['url'] ); ?></code><br>
+					Spalten: <code><?php echo esc_html( implode( ' | ', (array) $test['header'] ) ); ?></code>
+					<?php if ( ! empty( $test['warehouses'] ) ) : ?>
+						<br>Lager in der Tabelle:
+						<?php
+						$parts = array();
+						foreach ( (array) $test['warehouses'] as $code => $n ) {
+							$parts[] = $code . ' (' . (int) $n . ')';
+						}
+						echo esc_html( implode( ', ', $parts ) );
+						?>
 					<?php endif; ?>
-					<?php if ( ! empty( $b['sample'] ) ) : ?>
-						<table class="widefat striped" style="margin:0 0 1em">
-							<thead><tr><th>Artikelnummer</th><th>Name</th><th>Bestand</th></tr></thead>
-							<tbody>
-							<?php foreach ( $b['sample'] as $a ) : ?>
-								<tr>
-									<td><code><?php echo esc_html( $a['code'] ); ?></code></td>
-									<td><?php echo esc_html( $a['name'] ); ?></td>
-									<td><?php echo $a['stock'] === null ? '—' : esc_html( (string) $a['stock'] ); ?></td>
-								</tr>
-							<?php endforeach; ?>
-							</tbody>
-						</table>
-					<?php endif; ?>
-					<?php if ( ! empty( $b['raw'] ) ) : ?>
-						<details style="margin:0 0 1em">
-							<summary>Rohantwort anzeigen</summary>
-							<textarea readonly rows="8" style="width:100%;font-family:monospace"><?php echo esc_textarea( $b['raw'] ); ?></textarea>
-						</details>
-					<?php endif; ?>
-				<?php endforeach; ?>
+				</p>
+				<?php if ( ! empty( $test['warnings'] ) ) : ?>
+					<ul style="margin-left:1.5em">
+						<?php foreach ( $test['warnings'] as $w ) : ?>
+							<li><?php echo esc_html( $w ); ?></li>
+						<?php endforeach; ?>
+					</ul>
+				<?php endif; ?>
+				<?php if ( ! empty( $test['sample'] ) ) : ?>
+					<table class="widefat striped" style="margin:0 0 1em;max-width:60em">
+						<thead><tr><th>Artikelnummer</th><th>Marke</th><th>Lager</th><th>Bestand</th><th>im Shop</th></tr></thead>
+						<tbody>
+						<?php foreach ( $test['sample'] as $a ) : ?>
+							<tr>
+								<td><code><?php echo esc_html( $a['code'] ); ?></code></td>
+								<td><?php echo esc_html( $a['brand'] ); ?></td>
+								<td><?php echo esc_html( $a['warehouse'] ); ?></td>
+								<td><?php echo $a['stock'] === null ? '—' : esc_html( (string) ( 0 + $a['stock'] ) ); ?></td>
+								<td><?php echo TOS_Matcher::for_code( $a['code'] ) ? 'ja' : '—'; ?></td>
+							</tr>
+						<?php endforeach; ?>
+						</tbody>
+					</table>
+				<?php endif; ?>
 			<?php endif; ?>
 		</div>
 	<?php endif; ?>
@@ -112,61 +115,63 @@ $cs_const = TOS_Settings::credential_is_constant( 'consumer_secret' );
 		<?php wp_nonce_field( 'tos_save' ); ?>
 		<input type="hidden" name="action" value="tos_save">
 
-		<h2>Zugang zum Tiger-One-ERP</h2>
+		<h2>Bestandstabelle</h2>
 		<p class="description" style="max-width:52em">
-			Der Stock Feed braucht nach heutigem Stand kein Token — es genügen Warehouse Code und Brand Code.
-			Consumer Key und Secret sind nur nötig, falls Tiger One den Feed später absichert (oder für das
-			Übertragen von Bestellungen). Alle Werte dürfen auch in der <code>wp-config.php</code> stehen:
-			<code>TIGERONE_WAREHOUSE_CODE</code>, <code>TIGERONE_BRAND_CODES</code>,
-			<code>TIGERONE_CONSUMER_KEY</code>, <code>TIGERONE_CONSUMER_SECRET</code>. Konstanten haben Vorrang.
+			Der Bestand kommt aus dem Live-Bestands-Sheet von Tiger One — einer Google-Tabelle mit den
+			Spalten <code>SKU</code>, <code>Quantity</code>, <code>Brand</code>, <code>Warehouse</code> und
+			<code>Warehouse Code</code>. Der Link aus dem Browser genügt; der CSV-Export wird daraus selbst
+			gebaut. Die Tabelle muss für „Jeder mit dem Link" lesbar oder als CSV veröffentlicht sein.
+			Die Adresse darf auch in der <code>wp-config.php</code> stehen
+			(<code>TIGERONE_SHEET_URL</code>) — die Konstante hat Vorrang.
 		</p>
 		<table class="form-table" role="presentation">
 			<tr>
-				<th scope="row"><label for="api_base">API-Adresse</label></th>
-				<td><input type="url" id="api_base" name="api_base" value="<?php echo esc_attr( $s['api_base'] ); ?>" class="regular-text">
-					<p class="description">Standard: <code>https://erp.tgrventures.com</code></p></td>
+				<th scope="row"><label for="sheet_url">Adresse der Tabelle</label></th>
+				<td>
+					<input type="url" id="sheet_url" name="sheet_url" value="<?php echo esc_attr( $url_const ? '' : $s['sheet_url'] ); ?>" class="large-text" <?php disabled( $url_const ); ?>
+						placeholder="https://docs.google.com/spreadsheets/d/…/edit?gid=…">
+					<?php if ( $url_const ) : ?><p class="description">Kommt aus der <code>wp-config.php</code>.</p><?php endif; ?>
+					<p class="description">Abgerufen wird: <code><?php echo esc_html( $csv_url !== '' ? $csv_url : '—' ); ?></code></p>
+				</td>
 			</tr>
 			<tr>
-				<th scope="row"><label for="warehouse_code">Warehouse Code</label></th>
+				<th scope="row"><label for="sheet_gid">Tabellenblatt (gid)</label></th>
+				<td><input type="text" id="sheet_gid" name="sheet_gid" value="<?php echo esc_attr( $s['sheet_gid'] ); ?>" class="small-text">
+					<p class="description">Die Zahl hinter <code>gid=</code>. Leer lassen, wenn der Link schon auf das richtige Blatt zeigt.</p></td>
+			</tr>
+			<tr>
+				<th scope="row">Spalten</th>
 				<td>
-					<input type="text" id="warehouse_code" name="warehouse_code" value="<?php echo esc_attr( $wh_const ? '' : $s['warehouse_code'] ); ?>" class="regular-text" <?php disabled( $wh_const ); ?>>
-					<?php if ( $wh_const ) : ?><p class="description">Kommt aus der <code>wp-config.php</code>.</p><?php endif; ?>
+					<label>Artikelnummer <input type="text" name="sheet_col_sku" value="<?php echo esc_attr( $s['sheet_col_sku'] ); ?>" class="small-text"></label>
+					<label style="margin-left:1em">Menge <input type="text" name="sheet_col_qty" value="<?php echo esc_attr( $s['sheet_col_qty'] ); ?>" class="small-text"></label>
+					<label style="margin-left:1em">Marke <input type="text" name="sheet_col_brand" value="<?php echo esc_attr( $s['sheet_col_brand'] ); ?>" class="small-text"></label>
+					<label style="margin-left:1em">Lager <input type="text" name="sheet_col_warehouse" value="<?php echo esc_attr( $s['sheet_col_warehouse'] ); ?>" class="small-text"></label>
 					<p class="description">
-						Darf leer bleiben: Dann wird das Feld gar nicht mitgesendet und Tiger One
-						antwortet selbst, ob der Feed ohne Lagerangabe auskommt. Im Onboarding ist
-						der Code als zwingend beschrieben — erfunden wird hier aber keiner.
+						Groß- und Kleinschreibung sowie Leerzeichen sind egal. Fehlt der eingetragene Name,
+						werden die üblichen Schreibweisen (SKU, Quantity, Menge, Bestand …) selbst erkannt.
 					</p>
 				</td>
 			</tr>
 			<tr>
-				<th scope="row"><label for="brand_codes">Brand Codes</label></th>
-				<td>
-					<input type="text" id="brand_codes" name="brand_codes" value="<?php echo esc_attr( $bc_const ? '' : $s['brand_codes'] ); ?>" class="regular-text" <?php disabled( $bc_const ); ?>>
-					<p class="description">Mehrere durch Komma trennen. Je Marke ein Code — der Feed liefert immer genau eine Marke.</p>
-				</td>
+				<th scope="row"><label for="warehouse_filter">Nur ein Lager</label></th>
+				<td><input type="text" id="warehouse_filter" name="warehouse_filter" value="<?php echo esc_attr( $s['warehouse_filter'] ); ?>" class="regular-text" placeholder="z. B. MALAGALIVE">
+					<p class="description">Leer = alle Zeilen der Tabelle. Mit Eintrag zählt nur dieses Lager — sinnvoll, sobald Tiger One mehrere Lager in eine Tabelle schreibt.</p></td>
 			</tr>
 			<tr>
-				<th scope="row"><label for="customer_code">Customer Code</label></th>
-				<td><input type="text" id="customer_code" name="customer_code" value="<?php echo esc_attr( $s['customer_code'] ); ?>" class="regular-text">
-					<p class="description">Wird für den Bestandsabgleich nicht gebraucht, nur für Bestellungen. Hier nur zur Dokumentation.</p></td>
+				<th scope="row"><label for="brand_filter">Nur bestimmte Marken</label></th>
+				<td><input type="text" id="brand_filter" name="brand_filter" value="<?php echo esc_attr( $s['brand_filter'] ); ?>" class="large-text" placeholder="leer = alle Marken">
+					<p class="description">Kommagetrennt, genau wie in der Spalte „Brand". Der Abgleich läuft ohnehin nur über SKUs, die es im Shop gibt — der Filter ist eine zusätzliche Bremse.</p></td>
 			</tr>
 			<tr>
-				<th scope="row">Token</th>
+				<th scope="row">Doppelte Artikelnummern</th>
 				<td>
-					<label><input type="checkbox" name="use_token" value="1" <?php checked( (int) $s['use_token'], 1 ); ?>> Bearer-Token mitsenden</label>
-					<p class="description">Nur einschalten, wenn der Feed ohne Token 401/403 antwortet.</p>
-					<p>
-						<label for="consumer_key">Consumer Key</label><br>
-						<input type="text" id="consumer_key" name="consumer_key" value="<?php echo esc_attr( $ck_const ? '' : $s['consumer_key'] ); ?>" class="regular-text" <?php disabled( $ck_const ); ?>>
-					</p>
-					<p>
-						<label for="consumer_secret">Secret Key</label><br>
-						<input type="password" id="consumer_secret" name="consumer_secret" value="" class="regular-text" autocomplete="new-password" <?php disabled( $cs_const ); ?>
-							placeholder="<?php echo $s['consumer_secret'] !== '' || $cs_const ? 'gespeichert — nur zum Ändern ausfüllen' : ''; ?>">
-						<?php if ( $s['consumer_secret'] !== '' && ! $cs_const ) : ?>
-							<label style="margin-left:1em"><input type="checkbox" name="consumer_secret_clear" value="1"> löschen</label>
-						<?php endif; ?>
-					</p>
+					<select name="duplicate_mode">
+						<option value="sum" <?php selected( $s['duplicate_mode'], 'sum' ); ?>>Mengen addieren (empfohlen)</option>
+						<option value="max" <?php selected( $s['duplicate_mode'], 'max' ); ?>>Größte Menge nehmen</option>
+						<option value="first" <?php selected( $s['duplicate_mode'], 'first' ); ?>>Erste Zeile gewinnt</option>
+						<option value="last" <?php selected( $s['duplicate_mode'], 'last' ); ?>>Letzte Zeile gewinnt</option>
+					</select>
+					<p class="description">Steht eine SKU mehrfach in der Tabelle (mehrere Lager oder Chargen), gilt diese Regel.</p>
 				</td>
 			</tr>
 			<tr>
@@ -228,13 +233,13 @@ $cs_const = TOS_Settings::credential_is_constant( 'consumer_secret' );
 				</td>
 			</tr>
 			<tr>
-				<th scope="row">Artikel nicht mehr im Feed</th>
+				<th scope="row">Artikel nicht mehr in der Tabelle</th>
 				<td>
 					<select name="missing_action">
 						<option value="ignore" <?php selected( $s['missing_action'], 'ignore' ); ?>>Unangetastet lassen (empfohlen)</option>
 						<option value="zero" <?php selected( $s['missing_action'], 'zero' ); ?>>Auf 0 setzen</option>
 					</select>
-					<p class="description">Betrifft nur Artikelnummern, die schon einmal in einem Tiger-One-Feed standen.</p>
+					<p class="description">Betrifft nur Artikelnummern, die schon einmal in einer Tiger-One-Bestandstabelle standen.</p>
 				</td>
 			</tr>
 			<tr>
@@ -249,7 +254,7 @@ $cs_const = TOS_Settings::credential_is_constant( 'consumer_secret' );
 			<tr>
 				<th scope="row"><label for="min_rows">Mindestzahl Artikel</label></th>
 				<td><input type="number" id="min_rows" name="min_rows" value="<?php echo esc_attr( (int) $s['min_rows'] ); ?>" min="0" class="small-text">
-					<p class="description">Liefert der Feed weniger Artikel, bricht der Lauf ab, ohne etwas zu ändern.</p></td>
+					<p class="description">Enthält die Tabelle weniger Artikel, bricht der Lauf ab, ohne etwas zu ändern.</p></td>
 			</tr>
 			<tr>
 				<th scope="row"><label for="max_zero_ratio">Höchstanteil Nullstellungen</label></th>
@@ -282,7 +287,8 @@ $cs_const = TOS_Settings::credential_is_constant( 'consumer_secret' );
 
 		<h2>Artikelliste (optional)</h2>
 		<p class="description" style="max-width:52em">
-			Die öffentliche Tiger-One-Artikelliste enthält Namen, Marke und Preise, aber keinen Bestand.
+			Die Bestandstabelle führt keine Namen und keine Preise. Wer im Katalog Klartext sehen will,
+			hinterlegt hier zusätzlich die Tiger-One-Artikelliste.
 			Sie wird ausschließlich in den Katalog dieses Plugins geschrieben — an Produkten ändert sie nichts.
 			Bei Google-Tabellen muss der Link auf den CSV-Export zeigen.
 		</p>
@@ -312,7 +318,7 @@ $cs_const = TOS_Settings::credential_is_constant( 'consumer_secret' );
 		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 			<?php wp_nonce_field( 'tos_test' ); ?>
 			<input type="hidden" name="action" value="tos_test">
-			<button class="button">Verbindung testen</button>
+			<button class="button">Tabelle prüfen</button>
 		</form>
 		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 			<?php wp_nonce_field( 'tos_run' ); ?>

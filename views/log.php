@@ -24,21 +24,35 @@ $show = is_array( $run ) ? $run : ( is_array( $last ) ? $last : array() );
 
 		<table class="widefat" style="max-width:44em">
 			<tbody>
-				<tr><th>Artikel im Feed</th><td><?php echo (int) ( $show['articles'] ?? 0 ); ?></td></tr>
+				<tr><th>Artikel in der Tabelle</th><td><?php echo (int) ( $show['articles'] ?? 0 ); ?></td></tr>
 				<tr><th>davon im Shop</th><td><?php echo (int) ( $show['matched'] ?? 0 ); ?></td></tr>
 				<tr><th>Neu im Katalog</th><td><?php echo (int) ( $show['new_art'] ?? 0 ); ?></td></tr>
 				<tr><th>Geändert</th><td><?php echo (int) ( $show['updated'] ?? 0 ); ?></td></tr>
 				<tr><th>Unverändert</th><td><?php echo (int) ( $show['unchanged'] ?? 0 ); ?></td></tr>
 				<tr><th>Übersprungen</th><td><?php echo (int) ( $show['skipped'] ?? 0 ); ?></td></tr>
 				<tr><th>Auf 0 gesetzt</th><td><?php echo (int) ( $show['to_zero'] ?? 0 ); ?></td></tr>
-				<tr><th>Nicht mehr im Feed</th><td><?php echo (int) ( $show['missing'] ?? 0 ); ?></td></tr>
-				<?php if ( ! empty( $show['brands'] ) ) : ?>
+				<tr><th>Nicht mehr in der Tabelle</th><td><?php echo (int) ( $show['missing'] ?? 0 ); ?></td></tr>
+				<?php if ( ! empty( $show['source'] ) ) : ?>
 					<tr>
-						<th>Marken</th>
+						<th>Bestandstabelle</th>
 						<td>
-							<?php foreach ( $show['brands'] as $b ) : ?>
-								<?php echo esc_html( sprintf( '%s: %d Artikel', $b['code'], $b['articles'] ) ); ?><br>
-							<?php endforeach; ?>
+							<?php
+							$src = (array) $show['source'];
+							echo esc_html(
+								sprintf(
+									'%d Zeilen, %d Artikelnummern, %d mit Bestand 0',
+									(int) ( $src['rows'] ?? 0 ),
+									(int) ( $src['used'] ?? 0 ),
+									(int) ( $src['zero'] ?? 0 )
+								)
+							);
+							if ( ! empty( $src['duplicates'] ) ) {
+								echo '<br>' . esc_html( sprintf( '%d doppelte Artikelnummern zusammengefasst', (int) $src['duplicates'] ) );
+							}
+							if ( ! empty( $src['warehouses'] ) ) {
+								echo '<br>' . esc_html( 'Lager: ' . implode( ', ', (array) $src['warehouses'] ) );
+							}
+							?>
 						</td>
 					</tr>
 				<?php endif; ?>

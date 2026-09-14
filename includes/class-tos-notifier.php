@@ -29,12 +29,18 @@ class TOS_Notifier {
 			: sprintf( '[Tiger One] Bestandsabgleich: %d Änderungen', count( $report['changes'] ) );
 
 		$l   = array();
-		$l[] = 'Artikel im Feed: ' . $report['articles'] . '  ·  davon im Shop: ' . $report['matched'];
-		foreach ( $report['brands'] as $b ) {
-			$l[] = '  · Brand Code ' . $b['code'] . ': ' . $b['articles'] . ' Artikel';
+		$l[] = 'Artikel in der Tabelle: ' . $report['articles'] . '  ·  davon im Shop: ' . $report['matched'];
+		$src = (array) ( $report['source'] ?? array() );
+		if ( $src ) {
+			$l[] = sprintf(
+				'  · %d Zeilen gelesen, %d mit Bestand 0%s',
+				(int) ( $src['rows'] ?? 0 ),
+				(int) ( $src['zero'] ?? 0 ),
+				! empty( $src['warehouses'] ) ? ', Lager: ' . implode( ', ', (array) $src['warehouses'] ) : ''
+			);
 		}
 		$l[] = 'Geändert: ' . $report['updated'] . '  ·  Unverändert: ' . $report['unchanged'] . '  ·  Übersprungen: ' . $report['skipped'];
-		$l[] = 'Nicht mehr im Feed: ' . $report['missing'];
+		$l[] = 'Nicht mehr in der Tabelle: ' . $report['missing'];
 		$l[] = '';
 		if ( $report['errors'] ) {
 			$l[] = 'Meldungen:';

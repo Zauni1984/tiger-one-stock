@@ -39,12 +39,12 @@ class TOS_Admin {
 		$in  = wp_unslash( $_POST );
 		$out = array();
 
-		foreach ( array( 'warehouse_code', 'brand_codes', 'customer_code', 'consumer_key', 'interval', 'missing_action', 'backorder_mode', 'notify_on', 'exclude_sku_prefix', 'list_col_sku', 'list_col_name', 'list_col_brand', 'list_col_price' ) as $k ) {
+		foreach ( array( 'sheet_gid', 'sheet_col_sku', 'sheet_col_qty', 'sheet_col_brand', 'sheet_col_warehouse', 'sheet_col_name', 'sheet_col_price', 'warehouse_filter', 'brand_filter', 'duplicate_mode', 'interval', 'missing_action', 'backorder_mode', 'notify_on', 'exclude_sku_prefix', 'list_col_sku', 'list_col_name', 'list_col_brand', 'list_col_price' ) as $k ) {
 			if ( isset( $in[ $k ] ) ) {
 				$out[ $k ] = sanitize_text_field( $in[ $k ] );
 			}
 		}
-		foreach ( array( 'api_base', 'list_url' ) as $k ) {
+		foreach ( array( 'sheet_url', 'list_url' ) as $k ) {
 			if ( isset( $in[ $k ] ) ) {
 				$out[ $k ] = esc_url_raw( trim( $in[ $k ] ) );
 			}
@@ -52,7 +52,7 @@ class TOS_Admin {
 		if ( isset( $in['notify_email'] ) ) {
 			$out['notify_email'] = sanitize_email( $in['notify_email'] );
 		}
-		foreach ( array( 'enabled', 'write_stock_qty', 'sync_variations', 'use_token' ) as $k ) {
+		foreach ( array( 'enabled', 'write_stock_qty', 'sync_variations' ) as $k ) {
 			$out[ $k ] = isset( $in[ $k ] ) ? 1 : 0;
 		}
 		foreach ( array( 'buffer', 'threshold', 'max_zero_ratio', 'min_rows', 'log_keep_days', 'http_timeout' ) as $k ) {
@@ -60,16 +60,11 @@ class TOS_Admin {
 				$out[ $k ] = max( 0, (float) str_replace( ',', '.', $in[ $k ] ) );
 			}
 		}
-		// Das Secret nur überschreiben, wenn wirklich etwas eingegeben wurde.
-		if ( isset( $in['consumer_secret'] ) && $in['consumer_secret'] !== '' ) {
-			$out['consumer_secret'] = TOS_Settings::encrypt( $in['consumer_secret'] );
-		}
-		if ( isset( $in['consumer_secret_clear'] ) ) {
-			$out['consumer_secret'] = '';
+		if ( ! in_array( $out['duplicate_mode'] ?? 'sum', array( 'sum', 'max', 'first', 'last' ), true ) ) {
+			$out['duplicate_mode'] = 'sum';
 		}
 
 		TOS_Settings::save( $out );
-		TOS_API::forget_token();
 		TOS_Cron::reschedule();
 		self::back( 'tos', array( 'saved' => 1 ) );
 	}
@@ -80,40 +75,25 @@ class TOS_Admin {
 		self::guard();
 		check_admin_referer( 'tos_test' );
 
-		$codes = TOS_Settings::brand_codes();
-		if ( ! $codes ) {
-			set_transient( 'tos_test_result', array( 'error' => 'Es ist kein Brand Code hinterlegt.' ), 600 );
+		$url = TOS_Settings::sheet_url();
+		$out = array( 'url' => TOS_Sheet::csv_url( $url, TOS_Settings::get( 'sheet_gid', '' ) ) );
+
+		$sheet = TOS_Sheet::load();
+		if ( is_wp_error( $sheet ) ) {
+			$out['error'] = $sheet->get_error_message();
+			set_transient( 'tos_test_result', $out, 900 );
 			self::back( 'tos', array( 'tested' => 1 ) );
 		}
 
-		$out = array( 'brands' => array() );
-		foreach ( $codes as $bc ) {
-			$res = TOS_API::brand_stock( $bc );
-			if ( is_wp_error( $res ) ) {
-				$out['brands'][] = array(
-					'code'  => $bc,
-					'error' => $res->get_error_message(),
-				);
-				continue;
-			}
-			$entry = array(
-				'code'      => $bc,
-				'http'      => $res['http'],
-				'transport' => $res['transport'],
-				'raw'       => mb_substr( $res['raw'], 0, 4000 ),
-			);
-			$parsed = TOS_Feed::parse( $res['payload'], $bc, TOS_Settings::credential( 'warehouse_code' ) );
-			if ( is_wp_error( $parsed ) ) {
-				$entry['error'] = $parsed->get_error_message();
-			} else {
-				$entry['shape']    = $parsed['shape'];
-				$entry['articles'] = count( $parsed['articles'] );
-				$entry['warnings'] = $parsed['warnings'];
-				$entry['sample']   = array_slice( $parsed['articles'], 0, 5 );
-				$entry['matched']  = TOS_Matcher::matched_count( array_keys( $parsed['articles'] ) );
-			}
-			$out['brands'][] = $entry;
-		}
+		TOS_Matcher::flush();
+		$out['header']     = $sheet['header'];
+		$out['stats']      = $sheet['stats'];
+		$out['warnings']   = $sheet['warnings'];
+		$out['bytes']      = $sheet['bytes'];
+		$out['articles']   = (int) $sheet['stats']['used'];
+		$out['matched']    = TOS_Matcher::matched_count( array_keys( $sheet['articles'] ) );
+		$out['sample']     = array_slice( $sheet['articles'], 0, 8 );
+		$out['warehouses'] = (array) ( $sheet['stats']['warehouses'] ?? array() );
 
 		set_transient( 'tos_test_result', $out, 900 );
 		self::back( 'tos', array( 'tested' => 1 ) );
