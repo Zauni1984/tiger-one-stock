@@ -10,6 +10,9 @@ defined( 'ABSPATH' ) || exit;
  *
  * Eigenbestand trägt eine "HJ-…"-SKU und wird grundsätzlich übersprungen. Diese
  * Sperre ist hart: Eine Lieferantenliste kann eigenen Bestand nie umstellen.
+ *
+ * Verglichen wird ausschließlich die Artikelnummer — nie EAN/GTIN, Bezeichnung,
+ * Marke oder Preis.
  */
 class TOS_Matcher {
 
@@ -29,6 +32,36 @@ class TOS_Matcher {
 		$map    = array();
 		$prefix = trim( (string) TOS_Settings::get( 'exclude_sku_prefix', 'HJ-' ) );
 
+		// Abweichende Artikelnummer direkt am Produkt hinterlegt. Ist sie gesetzt,
+		// zählt nur sie — die SKU dieses Produkts wird dann nicht mehr verglichen.
+		$overrides = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT pm.post_id, pm.meta_value AS code, p.post_type, p.post_parent
+				 FROM {$wpdb->postmeta} pm
+				 INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
+				 WHERE pm.meta_key = %s
+				   AND pm.meta_value <> ''
+				   AND p.post_type IN ('product','product_variation')
+				   AND p.post_status NOT IN ('trash','auto-draft')",
+				TOS_META_CODE
+			)
+		);
+		$overridden = array();
+		foreach ( $overrides as $r ) {
+			$code = trim( (string) $r->code );
+			if ( $code === '' ) {
+				continue;
+			}
+			$overridden[ (int) $r->post_id ] = true;
+			$map[ self::key( $code ) ][]     = array(
+				'pid'    => (int) $r->post_id,
+				'parent' => (int) $r->post_parent,
+				'type'   => (string) $r->post_type,
+				'via'    => 'meta',
+				'sku'    => $code,
+			);
+		}
+
 		$rows = $wpdb->get_results(
 			"SELECT pm.post_id, pm.meta_value AS sku, p.post_type, p.post_parent
 			 FROM {$wpdb->postmeta} pm
@@ -40,7 +73,7 @@ class TOS_Matcher {
 		);
 		foreach ( $rows as $r ) {
 			$sku = trim( (string) $r->sku );
-			if ( $sku === '' ) {
+			if ( $sku === '' || isset( $overridden[ (int) $r->post_id ] ) ) {
 				continue;
 			}
 			if ( $prefix !== '' && stripos( $sku, $prefix ) === 0 ) {
@@ -52,28 +85,6 @@ class TOS_Matcher {
 				'type'   => (string) $r->post_type,
 				'via'    => 'sku',
 				'sku'    => $sku,
-			);
-		}
-
-		// Ausnahme: abweichende Artikelnummer direkt am Produkt hinterlegt.
-		$overrides = $wpdb->get_results(
-			$wpdb->prepare(
-				"SELECT pm.post_id, pm.meta_value AS code, p.post_type, p.post_parent
-				 FROM {$wpdb->postmeta} pm
-				 INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
-				 WHERE pm.meta_key = %s
-				   AND pm.meta_value <> ''
-				   AND p.post_status NOT IN ('trash','auto-draft')",
-				TOS_META_CODE
-			)
-		);
-		foreach ( $overrides as $r ) {
-			$map[ self::key( $r->code ) ][] = array(
-				'pid'    => (int) $r->post_id,
-				'parent' => (int) $r->post_parent,
-				'type'   => (string) $r->post_type,
-				'via'    => 'meta',
-				'sku'    => (string) $r->code,
 			);
 		}
 
