@@ -67,7 +67,6 @@ $pages = max( 1, (int) ceil( $data['total'] / $per ) );
 						<?php foreach ( $r->hits as $h ) : ?>
 							<a href="<?php echo esc_url( get_edit_post_link( $h['type'] === 'product_variation' ? $h['parent'] : $h['pid'] ) ); ?>">
 								#<?php echo (int) $h['pid']; ?></a><?php echo $h['type'] === 'product_variation' ? ' (Variante)' : ''; ?>
-							<?php if ( $h['via'] === 'meta' ) : ?><em>(Feld)</em><?php endif; ?>
 						<?php endforeach; ?>
 					<?php endif; ?>
 				</td>

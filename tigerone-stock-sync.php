@@ -19,7 +19,6 @@ define( 'TOS_PATH', plugin_dir_path( __FILE__ ) );
 define( 'TOS_URL', plugin_dir_url( __FILE__ ) );
 
 /** Meta key for an article code that differs from the product SKU. */
-define( 'TOS_META_CODE', '_tigerone_code' );
 /** Meta key that takes a single product out of the sync. */
 define( 'TOS_META_EXCLUDE', '_tigerone_exclude' );
 
